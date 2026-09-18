@@ -1,5 +1,8 @@
 export function notFoundHandler(req, res) {
-  res.status(404).json({ error: 'Uç nokta bulunamadı' });
+  res.status(404).json({
+    error: `Uç nokta bulunamadı: ${req.method} ${req.originalUrl}`,
+    ipucu: 'Uç nokta listesi için GET /',
+  });
 }
 
 // eslint-disable-next-line no-unused-vars
