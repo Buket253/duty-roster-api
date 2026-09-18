@@ -15,7 +15,9 @@ import { adminShareRouter, publicRouter } from './routes/share.js';
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: process.env.CORS_ORIGIN?.split(',') ?? '*' }));
+  // CORS_ORIGIN tanımsız ya da '*' ise tüm origin'lere izin verilir.
+  const corsOrigin = process.env.CORS_ORIGIN?.trim();
+  app.use(cors({ origin: !corsOrigin || corsOrigin === '*' ? true : corsOrigin.split(',') }));
   app.use(express.json());
 
   app.get('/api/health', (req, res) => res.json({ ok: true }));
