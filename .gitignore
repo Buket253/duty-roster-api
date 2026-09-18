@@ -2,3 +2,8 @@ node_modules/
 .env
 .DS_Store
 *.log
+
+# Kimlik bilgisi dosyaları
+*.env
+!.env.example
+atlas-credentials*
