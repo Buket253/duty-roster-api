@@ -445,10 +445,44 @@ Hepsi şartnamedeki bir gereksinimi karşılamak için:
 - **Tarihler UTC gece yarısına sabitlendi** — saat dilimi kayması gün atlamalarına
   neden oluyordu.
 
+## Vercel'e Deploy
+
+Vercel istekleri sunucusuz fonksiyonlarla karşılar; dinleyen bir süreç
+çalıştırmaz. Bu yüzden `src/server.js` (yani `app.listen`) orada devreye girmez —
+platformun çağırdığı giriş noktası `api/index.js`, `vercel.json` de tüm yolları
+ona yönlendirir. Yerel geliştirme değişmedi, `npm run dev` yine `src/server.js`
+üzerinden yürür.
+
+Deploy öncesi yapılması gerekenler:
+
+1. **Ortam değişkenleri** — Vercel > Project > Settings > Environment Variables:
+   `MONGODB_URI` ve `JWT_SECRET` zorunlu. `CORS_ORIGIN` ile `PUBLIC_BASE_URL`
+   frontend'in kendi adresi olmalı (ör. `https://duty-roster-fe.vercel.app`).
+   `PORT` sunucusuz ortamda kullanılmaz.
+2. **Atlas IP erişimi** — Vercel fonksiyonlarının çıkış IP'si sabit olmadığı için
+   Atlas > Network Access listesine `0.0.0.0/0` eklenmeli.
+3. **Frontend** — `VITE_API_URL` deploy edilen API adresine çevrilmeli.
+4. **Seed** — `npm run seed` yerelde, aynı `MONGODB_URI` ile bir kez çalıştırılır;
+   sunucusuz ortamda çalıştırılacak bir uç nokta yok.
+
+Bilinmesi gerekenler:
+
+- Bağlantı, kap ömrü boyunca yeniden kullanılır (`api/index.js`). Her istekte
+  yeniden bağlanmak Atlas bağlantı havuzunu kısa sürede tüketirdi.
+- Soğuk başlatmada ilk isteğe Atlas bağlantısı eklenir; birkaç saniye sürebilir.
+- Otomatik üretim (`POST .../generate`) ağır bir iştir; testlerde bir ay için
+  6–10 saniye sürüyor. `vercel.json` fonksiyon süresini 60 saniyeye çıkarır.
+  Büyük birimlerde bu sınıra yaklaşılırsa uzun ömürlü bir sunucu (Render,
+  Railway, Fly) daha uygun olur — o durumda `src/server.js` değişiklik
+  gerektirmeden çalışır.
+
 ## Yapı
 
 ```
+api/
+  index.js      Vercel (sunucusuz) giriş noktası
 src/
+  server.js     Yerel/uzun ömürlü sunucu giriş noktası
   models/       Mongoose şemaları
   routes/       Express router'ları
   controllers/  İstek işleyicileri
