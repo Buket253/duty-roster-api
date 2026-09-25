@@ -119,6 +119,8 @@ export function repairIdleGaps({ assignments, employees, leaves, rule, history =
             const sahip = a.employee ? byId.get(idOf(a.employee)) : null;
             // Her gün gelmesi gereken personelin slotu devredilemez.
             if (sahip && isDailyDayStaff(sahip, a.date)) return false;
+            // Kurala göre ayrılmış slot da devredilemez (izin öncesi Perşembe nöbeti).
+            if (a.locked) return false;
 
             // Devralınan nöbet, devralanda gün aşırı aralık yaratmamalı: gün aşırı
             // son çaredir ve bekleme onarımı onu üretmemeli.

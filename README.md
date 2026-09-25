@@ -430,6 +430,7 @@ takvim bunları işaretler. Tatil günlerinde:
 | Kural | Kapsam |
 |---|---|
 | İzinli personel (`excludeOnLeave`) | her vardiya — hem nöbet hem mesai |
+| İzin öncesi hafta sonu | Pazartesi başlayan iznin öncesindeki Cumartesi + Pazar (`excludeOnLeave` açıkken) |
 | Aynı gün ikinci vardiya | her vardiya |
 | `minRestDaysAfterDuty` | Nöbet sonrası bu kadar gün **hiçbir** vardiya verilmez |
 | `maxTightGapsPerMonth` | Tam alt sınırda kalan ("gün aşırı") nöbet aralığının aylık üst sınırı |
@@ -452,17 +453,48 @@ sıralamada öncelik üretir ve sağlanamadıklarında uyarı olarak raporlanır
 | `gun-asiri-limit` | Aylık gün aşırı nöbet hakkı aşıldı |
 | `cifte-atama` | Aynı gün ikinci vardiya |
 | `izinli` | Kişi o tarihte izinli |
+| `izin-oncesi-hafta-sonu` | Pazartesi başlayan iznin öncesindeki hafta sonuna yazılmış |
 | `limit-asildi` | Aylık nöbet limiti aşıldı |
 | `nobete-giremez` | Nöbete giremeyen personel nöbete yazılmış |
 | `sorumlu-yedek` | Sorumlu hemşire yedek olarak nöbete girdi (ihlal değil, bilgi) |
 
 ### İzin kuralı
 
-İznin Pazartesi başlaması, dönüş gününün (bitişin ertesi) Pazartesi olması ve
-izne girmeden önceki Perşembe nöbetinin tutulmuş olması beklenir. Hiçbiri
-**engelleyici değildir** — ihlal `leaveWarnings` altında uyarı olarak döner
-(`izin-pazartesi-baslamiyor`, `donus-pazartesi-degil`,
-`izin-oncesi-persembe-nobeti-yok`). Çizelgeleme bu yerleşimi sıralamada tercih eder.
+İzne çıkış bir bütün olarak tanımlı:
+
+| Gün | Beklenen |
+|---|---|
+| Perşembe | Kişi nöbeti tutar (24 saat, Cuma sabahı biter) |
+| Cumartesi – Pazar | **Boş kalır**, hiçbir vardiya verilmez |
+| Pazartesi | İzin başlar |
+| Dönüş (bitişin ertesi) | Pazartesi olmalı |
+
+**Perşembe nöbeti ayrılır, yarışmaya girmez.** Yalnızca sıralama tercihi olması
+yetmiyordu (ölçüldü): nöbet sıralamasında `gunAsiri` ve `urgent` anahtarları izin
+tercihinden önce geldiği için izne çıkacak kişi Perşembe nöbetini düzenli olarak
+kaybedip yerine Cuma nöbetini alıyordu. Bu slotlar artık genel tur başlamadan
+önce sahibine ayrılıyor (`reservePreLeaveDuties`) ve `locked` ile işaretleniyor;
+yerel arama ve bekleme onarımı onları devretmez. Yer bulunamazsa (aynı Pazartesi
+birden fazla kişi izne çıkıyor ve o Perşembe kadrosu yetmiyor) zorlanmaz, izin
+kaydı `izin-oncesi-persembe-nobeti-yok` uyarısıyla görünür kalır.
+
+**İzin öncesi hafta sonu hard constraint'tir.** Pazartesi başlayan bir iznin
+hemen öncesindeki Cumartesi ve Pazar (`isPreLeaveWeekend`) aday filtresinden
+çıkarılır; elle yazılırsa `izin-oncesi-hafta-sonu` bayrağı alır. `effectiveLeaveEnd`
+(izin sonrası hafta sonu) ile aynı fikrin aynası, ama izin kaydını geriye doğru
+**genişletmez**: o iki gün önceki ISO haftaya ait, izni geriye uzatmak kişinin
+fiilen Pazartesi–Cuma çalıştığı haftayı "izinli hafta" sayar ve haftalık saat alt
+sınırı denetlenmeden geçerdi. Bu yüzden ayrı bir kontrol olarak durur ve yalnızca
+aday uygunluğuna, bekleme sayımına ve adalet payına girer.
+
+İznin Pazartesi başlaması ve dönüşün Pazartesi olması **engelleyici değildir** —
+ihlal `leaveWarnings` altında uyarı olarak döner (`izin-pazartesi-baslamiyor`,
+`donus-pazartesi-degil`, `izin-oncesi-persembe-nobeti-yok`).
+
+Dönüş günü tercihi fiilî bitişe göre hesaplanır. Kayıttaki bitişe bakmak yanlış
+günü işaret ediyordu: Cuma biten bir izinde hafta sonu da izne dahil olduğu için
+"bitişin ertesi günü" Cumartesiye denk geliyor, kişi o gün hiçbir slot alamadığı
+için tercih boşa gidiyordu. Dönüş günü Pazartesidir.
 
 ## Şartnameden Sapmalar
 

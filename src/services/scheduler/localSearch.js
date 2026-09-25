@@ -7,8 +7,8 @@ import {
   dayShiftCount,
   dutyCount,
   idOf,
-  isOnLeave,
   isOnLeaveDuringWeek,
+  isUnavailable,
   sameEmployee,
   tightGapCount,
   totalHours,
@@ -34,8 +34,10 @@ export function availabilityShares({ employees, leaves, rule, year, month }) {
 
   const holidays = holidaySet(rule);
   const kadro = (date, type) => staffingFor(date, rule, holidays)[type];
+  // İzin öncesi hafta sonu da müsait sayılmaz: o iki gün kişiye slot verilemiyor,
+  // paya dahil edilirse adalet ölçüsü kişiyi olduğundan müsait görür.
   const musait = (employee, date) =>
-    !(rule.excludeOnLeave && isOnLeave(idOf(employee), date, leaves));
+    !(rule.excludeOnLeave && isUnavailable(idOf(employee), date, leaves));
 
   const duty = {};
   for (const category of DUTY_CATEGORIES) {
@@ -379,6 +381,9 @@ export function localSearch({
   const swappable = current.filter(
     (a) =>
       a.employee &&
+      // Kurala göre tek bir kişiye ayrılmış slot (izin öncesi Perşembe nöbeti)
+      // takasa açılmaz; aksi hâlde adalet maliyeti onu geri alabiliyor.
+      !a.locked &&
       !isDailyDayStaff(byId.get(idOf(a.employee)), a.date) &&
       (!types || types.includes(a.shiftType))
   );

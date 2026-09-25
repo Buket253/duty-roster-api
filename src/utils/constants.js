@@ -28,6 +28,9 @@ export const FLAGS = {
   TIGHT_GAP: 'gun-asiri-limit',
   DOUBLE_BOOKED: 'cifte-atama',
   ON_LEAVE: 'izinli',
+  // Pazartesi başlayan iznin hemen öncesindeki Cumartesi/Pazar: kişi Perşembe
+  // nöbetini tutar, hafta sonu boş kalır, Pazartesi izne ayrılır.
+  PRE_LEAVE_WEEKEND: 'izin-oncesi-hafta-sonu',
   OVER_LIMIT: 'limit-asildi',
   NO_DUTY: 'nobete-giremez',
   BACKUP_USED: 'sorumlu-yedek',

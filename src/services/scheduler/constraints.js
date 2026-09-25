@@ -3,6 +3,7 @@ import {
   addDays,
   diffDays,
   dutyCategory,
+  isMonday,
   isoWeekday,
   isoWeekKey,
   isWeekend,
@@ -45,6 +46,36 @@ export function effectiveLeaveEnd(leave) {
   if (gun === 5) return addDays(son, 2); // Cuma -> Pazar
   if (gun === 6) return addDays(son, 1); // Cumartesi -> Pazar
   return son;
+}
+
+/**
+ * Pazartesi başlayan bir iznin hemen öncesindeki Cumartesi ve Pazar.
+ *
+ * Kural, izne çıkışı bir bütün olarak tanımlıyor: kişi Perşembe nöbetini tutar,
+ * ardından hafta sonu boş kalır ve Pazartesi izne ayrılır. Perşembe nöbeti
+ * (24 saat, Cuma sabahı biter) tercih olarak zaten sıralamaya giriyordu; bu iki
+ * gün ise korumasızdı, kişi izne girmeden hemen önce hafta sonu vardiyasına
+ * yazılabiliyordu.
+ *
+ * effectiveLeaveEnd'in aynası ama izin kaydını geriye doğru GENİŞLETMİYOR:
+ * bu iki gün önceki ISO haftaya ait, izni geriye uzatmak o haftayı "izinli hafta"
+ * sayardı ve kişinin fiilen Pazartesi–Cuma çalıştığı haftada haftalık saat alt
+ * sınırı denetlenmeden geçerdi. Bu yüzden ayrı bir kontrol olarak duruyor ve
+ * yalnızca aday uygunluğuna, bekleme sayımına ve adalet payına giriyor.
+ */
+export function isPreLeaveWeekend(employeeId, date, leaves) {
+  const gun = startOfUtcDay(date);
+  const gunNo = isoWeekday(gun);
+  if (gunNo !== 6 && gunNo !== 7) return false;
+
+  return leaves.some((leave) => {
+    if (!sameEmployee(leave.employee, employeeId)) return false;
+    if (!isMonday(leave.startDate)) return false;
+    const bas = startOfUtcDay(leave.startDate);
+    // Cumartesi = başlangıç - 2 gün, Pazar = başlangıç - 1 gün.
+    const fark = diffDays(bas, gun);
+    return fark === 1 || fark === 2;
+  });
 }
 
 /** Çalışanın verilen tarihte onaylı bir izni var mı? */
@@ -181,6 +212,13 @@ export function idleDaysBefore(
 }
 
 /**
+ * Kişi o gün hastaneye çağrılabilir mi? İzin ve izin öncesi hafta sonu birlikte.
+ * Aday filtresi, bekleme sayımı ve adalet payı bu kapıyı kullanır.
+ */
+export const isUnavailable = (employeeId, date, leaves) =>
+  isOnLeave(employeeId, date, leaves) || isPreLeaveWeekend(employeeId, date, leaves);
+
+/**
  * Kişi verilen ISO haftasının herhangi bir gününde izinli mi?
  * İzin, kişiyi hem nöbetten hem mesaiden tamamen çıkardığı için o haftanın saati
  * haftalık alt sınıra göre değerlendirilmez.
@@ -196,7 +234,7 @@ export function isOnLeaveDuringWeek(employeeId, week, leaves) {
 /**
  * Kişinin o gün hastaneye gelmesi zaten mümkün değil miydi? Böyle günler beklemeye
  * sayılmaz, çünkü bekleme değil yapının kendisidir:
- *  - kişi izinlidir,
+ *  - kişi izinlidir ya da Pazartesi başlayan izninin hemen öncesindeki hafta sonundadır,
  *  - o gün kişinin girebileceği hiçbir tipten slot açılmamıştır (ör. hafta sonu
  *    gündüz kadrosu 0 iken nöbete giremeyen personel).
  *
@@ -206,7 +244,7 @@ export function isOnLeaveDuringWeek(employeeId, week, leaves) {
 export const yokSayilanGun = (employee, rule, leaves = []) => {
   const holidays = holidaySet(rule);
   return (date) => {
-    if (rule.excludeOnLeave !== false && isOnLeave(idOf(employee), date, leaves)) return true;
+    if (rule.excludeOnLeave !== false && isUnavailable(idOf(employee), date, leaves)) return true;
 
     const kadro = staffingFor(date, rule, holidays);
     const nobetMumkun = kadro['nobet-24'] > 0 && !neverOnDuty(employee, date);
@@ -223,6 +261,9 @@ export const yokSayilanGun = (employee, rule, leaves = []) => {
 export function violationFor(employee, slot, { leaves, assignments, rule, ignore = null, allowBackup = false }) {
   const id = idOf(employee);
   if (rule.excludeOnLeave && isOnLeave(id, slot.date, leaves)) return FLAGS.ON_LEAVE;
+  if (rule.excludeOnLeave && isPreLeaveWeekend(id, slot.date, leaves)) {
+    return FLAGS.PRE_LEAVE_WEEKEND;
+  }
   if (isDoubleBooked(id, slot.date, assignments, { ignore })) return FLAGS.DOUBLE_BOOKED;
   if (hasShortRest(id, slot.date, assignments, rule, { ignore })) return FLAGS.SHORT_REST;
 

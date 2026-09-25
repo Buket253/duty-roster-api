@@ -10,6 +10,7 @@ import {
   yokSayilanGun,
   isDoubleBooked,
   isOnLeave,
+  isPreLeaveWeekend,
   hasShortRest,
   tightGapCount,
   totalHours,
@@ -38,6 +39,10 @@ export function evaluateFlags(assignments, { leaves, rule, employees = [], histo
     } else {
       if (rule.excludeOnLeave && isOnLeave(employeeId, assignment.date, leaves)) {
         flags.push(FLAGS.ON_LEAVE);
+      } else if (rule.excludeOnLeave && isPreLeaveWeekend(employeeId, assignment.date, leaves)) {
+        // Zaten izinli olan gün ayrıca işaretlenmez; bu bayrak yalnızca izne
+        // girmeden önceki Cumartesi/Pazar için anlamlı.
+        flags.push(FLAGS.PRE_LEAVE_WEEKEND);
       }
       if (isDoubleBooked(employeeId, assignment.date, all, { ignore: assignment })) {
         flags.push(FLAGS.DOUBLE_BOOKED);

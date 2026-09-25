@@ -1,7 +1,7 @@
 import { FLAGS } from '../../utils/constants.js';
 import { shiftHours } from './shiftHours.js';
 import { holidaySet, staffingFor } from './calendar.js';
-import { tightGapCount } from './constraints.js';
+import { effectiveLeaveEnd, tightGapCount, violationFor } from './constraints.js';
 import { explainCandidates } from './filterCandidates.js';
 import {
   dayShiftCount,
@@ -44,8 +44,11 @@ export function leavePreference(employee, slot, leaves) {
       // Perşembe nöbeti, 4 gün sonra (Pazartesi) başlayan izin için.
       if (isMonday(leave.startDate) && diffDays(leave.startDate, slot.date) === 4) return 2;
     }
-    // İzin dönüşü: bitişin ertesi günü.
-    if (diffDays(slot.date, leave.endDate) === 1) return 1;
+    // İzin dönüşü: FİİLÎ bitişin ertesi günü. Kayıttaki bitişe bakmak yanlış günü
+    // işaret ediyordu: Cuma biten bir izinde hafta sonu da izne dahil olduğu için
+    // (effectiveLeaveEnd) "ertesi gün" Cumartesiye denk geliyor ve kişi o gün
+    // hiçbir slot alamadığı için tercih boşa gidiyordu. Dönüş günü Pazartesidir.
+    if (diffDays(slot.date, effectiveLeaveEnd(leave)) === 1) return 1;
   }
   return 0;
 }
@@ -155,6 +158,49 @@ function fillSlot(slot, pool, { assignments, leaves, rule, shares, allowBackup =
 }
 
 /**
+ * Pazartesi başlayan izinlerin hemen öncesindeki Perşembe nöbetlerini, genel tur
+ * başlamadan önce sahiplerine ayırır.
+ *
+ * Tercih olarak sıralamada yer alması yetmiyordu (ölçüldü): nöbet sıralamasında
+ * `gunAsiri` ve `urgent` anahtarları izin tercihinden ÖNCE geliyor, bu yüzden
+ * izne çıkacak kişi Perşembe nöbetini düzenli olarak kaybedip yerine Cuma
+ * nöbetini alıyordu. Kural bu slotu tek bir kişiye bağladığı için pazarlığa
+ * açmak yerine önce ayrılıyor.
+ *
+ * Ayrılan atama `locked` ile işaretlenir: yerel arama ve bekleme onarımı onu
+ * devretmez. Alan yoksa (aynı Pazartesi birden fazla kişi izne çıkıyor ve o
+ * Perşembe kadrosu yetmiyor, ya da kişi o slotu alamıyor) zorlanmaz — izin kaydı
+ * `izin-oncesi-persembe-nobeti-yok` uyarısıyla görünür kalır.
+ */
+function reservePreLeaveDuties(dutySlots, { assignments, pool, leaves, rule, shares }) {
+  const ayrilan = new Set();
+  const byId = new Map(pool.map((e) => [idOf(e), e]));
+
+  // Sıra belirlenimci olmalı: aynı Perşembeye iki kişi talip olduğunda hep aynı
+  // kişi kazansın, yoksa liste her üretimde değişir.
+  const sirali = leaves
+    .filter((l) => isMonday(l.startDate))
+    .sort((x, y) => String(idOf(x.employee)).localeCompare(String(idOf(y.employee))));
+
+  for (const leave of sirali) {
+    const employee = byId.get(idOf(leave.employee));
+    if (!employee) continue;
+
+    const persembe = addDays(leave.startDate, -4);
+    const slot = dutySlots.find(
+      (s) => !ayrilan.has(s) && sameUtcDay(s.date, persembe) && isoWeekday(s.date) === 4
+    );
+    if (!slot) continue;
+    if (violationFor(employee, slot, { leaves, assignments, rule })) continue;
+
+    assignments.push({ ...slot, employee: idOf(employee), flags: [], locked: true });
+    ayrilan.add(slot);
+  }
+
+  return ayrilan;
+}
+
+/**
  * 1. faz — nöbetler. En sıkı kısıt bunlar olduğu için önce yerleşirler ve gündüz
  * mesaisi etraflarına kurulur. Önce normal havuz denenir; hiç aday çıkmazsa
  * sorumlu hemşire yedek olarak devreye girer ve atama 'sorumlu-yedek' etiketlenir.
@@ -162,8 +208,13 @@ function fillSlot(slot, pool, { assignments, leaves, rule, shares, allowBackup =
 export function assignDuties({ slots, employees, leaves, rule, history = [], shares }) {
   const assignments = [...history];
   const pool = employees.filter((e) => e.active !== false);
+  const dutySlots = slots.filter((s) => s.shiftType === 'nobet-24');
 
-  for (const slot of slots.filter((s) => s.shiftType === 'nobet-24')) {
+  // İzin öncesi Perşembe nöbetleri genel turdan önce ayrılır.
+  const ayrilan = reservePreLeaveDuties(dutySlots, { assignments, pool, leaves, rule, shares });
+
+  for (const slot of dutySlots) {
+    if (ayrilan.has(slot)) continue;
     const placed =
       fillSlot(slot, pool, { assignments, leaves, rule, shares }) ??
       fillSlot(slot, pool, { assignments, leaves, rule, shares, allowBackup: true });

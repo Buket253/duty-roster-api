@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { buildSlots } from '../src/services/scheduler/buildSlots.js';
 import { buildSchedule } from '../src/services/scheduler/buildSchedule.js';
 import {
+  evaluateFlags,
   idleViolations,
   overCapacityDays,
   puantaj,
@@ -16,8 +17,10 @@ import {
   diffDays,
   dutyCategory,
   fullWeekKeys,
+  isoWeekday,
   isoWeekKey,
   isWeekend,
+  sameUtcDay,
   toIsoDay,
   utcDate,
 } from '../src/utils/dates.js';
@@ -310,11 +313,16 @@ test('Cuma biten izin hafta sonunu da kapsar, kişi Pazartesi döner', () => {
     );
   }
 
+  // İlk çalışma günü hafta sonuna denk gelmemeli. Hangi gün olduğu ise kadro
+  // yarışına bağlı ve kuralın konusu değil: izin 5 Ekim Pazartesi başladığı için
+  // öncesindeki 3-4 Ekim hafta sonu da korumalı, o iki gün beklemeye sayılmıyor
+  // ve kişi dönüş Pazartesisinde en aciliyetli aday olmak zorunda değil. Kural
+  // "hafta sonunda çağrılmaz" diyor, "şu güne yazılır" demiyor.
   const ilkGun = a
     .filter((x) => x.employee === 'a' && x.date >= utcDate(YEAR, MONTH, 10))
     .map((x) => toIsoDay(x.date))
     .sort()[0];
-  assert.equal(ilkGun, '2026-10-12', 'dönüş Pazartesi olmalı');
+  assert.ok(ilkGun >= '2026-10-12', `dönüş hafta sonundan sonra olmalı, bulunan: ${ilkGun}`);
 });
 
 test('gün aşırı nöbet son çaredir: alternatif varken kullanılmaz', () => {
@@ -625,4 +633,68 @@ test('süre bütçesi aramayı keser ama tamamlanmış liste döner', () => {
     'bütçe dolsa da her slot dolu döner'
   );
   assert.deepEqual(idleViolations(a, TEAM, RULE, YEAR, MONTH), [], 'bekleme sınırı korunur');
+});
+
+/**
+ * İzne çıkış bir bütün olarak tanımlı: kişi Perşembe nöbetini tutar, ardından
+ * Cumartesi ve Pazar boş kalır, Pazartesi izne ayrılır. Perşembe nöbeti tercih
+ * olarak zaten sıralamaya giriyordu; hafta sonu ise korumasızdı.
+ */
+test('Pazartesi izne çıkan, öncesindeki Cumartesi ve Pazar boş kalır', () => {
+  // 12 Ekim 2026 Pazartesi; öncesi: 8 Ekim Perşembe, 10-11 Ekim hafta sonu.
+  const izinBasi = utcDate(YEAR, MONTH, 12);
+  assert.equal(isoWeekday(izinBasi), 1, 'kurgu doğru: 12 Ekim Pazartesi');
+
+  const leaves = [
+    { _id: 'l1', employee: 'a', startDate: izinBasi, endDate: utcDate(YEAR, MONTH, 25) },
+  ];
+  const a = run({ leaves });
+
+  const gunleri = (gun) =>
+    a.filter((x) => x.employee === 'a' && sameUtcDay(x.date, utcDate(YEAR, MONTH, gun)));
+
+  assert.deepEqual(gunleri(10), [], '10 Ekim Cumartesi boş kalmalı');
+  assert.deepEqual(gunleri(11), [], '11 Ekim Pazar boş kalmalı');
+
+  // İzin öncesi Perşembe nöbeti: kuralın diğer yarısı.
+  const persembe = gunleri(8);
+  assert.equal(persembe.length, 1, '8 Ekim Perşembe kişiye verilmeli');
+  assert.equal(persembe[0].shiftType, 'nobet-24', 'Perşembe nöbet olmalı, mesai değil');
+
+  // Otomatik üretimde bu bayrak hiç çıkmamalı: aday filtresinde durduruluyor.
+  assert.equal(
+    a.filter((x) => x.flags?.includes(FLAGS.PRE_LEAVE_WEEKEND)).length,
+    0,
+    'üretim bu ihlali hiç oluşturmaz'
+  );
+
+  // İzin kaydı da uyarısız olmalı (Pazartesi başlıyor, Pazartesi dönüyor, Perşembe nöbeti var).
+  assert.deepEqual(leaveWarnings(leaves, a), []);
+});
+
+/** Elle yazıldığında engellenmez ama bayrakla işaretlenir; kural uyarı üretir. */
+test('izin öncesi hafta sonuna elle atama bayrak alır', () => {
+  const leaves = [
+    {
+      _id: 'l1',
+      employee: 'a',
+      startDate: utcDate(YEAR, MONTH, 12),
+      endDate: utcDate(YEAR, MONTH, 25),
+    },
+  ];
+  const atamalar = [
+    { date: utcDate(YEAR, MONTH, 10), employee: 'a', shiftType: 'nobet-24' }, // Cumartesi
+    { date: utcDate(YEAR, MONTH, 11), employee: 'a', shiftType: 'mesai-8' }, // Pazar
+    { date: utcDate(YEAR, MONTH, 8), employee: 'a', shiftType: 'nobet-24' }, // Perşembe: serbest
+    { date: utcDate(YEAR, MONTH, 3), employee: 'a', shiftType: 'nobet-24' }, // başka hafta sonu: serbest
+  ];
+  evaluateFlags(atamalar, { leaves, rule: RULE, employees: TEAM });
+
+  assert.ok(atamalar[0].flags.includes(FLAGS.PRE_LEAVE_WEEKEND), 'Cumartesi işaretlenir');
+  assert.ok(atamalar[1].flags.includes(FLAGS.PRE_LEAVE_WEEKEND), 'Pazar işaretlenir');
+  assert.ok(!atamalar[2].flags.includes(FLAGS.PRE_LEAVE_WEEKEND), 'Perşembe nöbeti serbest');
+  assert.ok(
+    !atamalar[3].flags.includes(FLAGS.PRE_LEAVE_WEEKEND),
+    'izinle ilgisi olmayan hafta sonu serbest'
+  );
 });
