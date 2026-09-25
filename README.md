@@ -211,6 +211,13 @@ harcanıyordu. Doyma noktası kadroya ve kısıtlara göre değiştiği için it
 varsayılanı düşürülmedi — sınırı süre koyuyor, böylece hızlı makinede tam arama
 yapılır, kısıtlı ortamda iş zamanında biter.
 
+Bütçe kısıtlamasının kaliteye maliyeti aynı birimde ayrıca ölçüldü: 1 sn'den
+sınırsıza kadar her bütçede nöbet, hafta sonu ve saat dağılımı **birebir aynı**
+çıkıyor. Kalan dağılım farkı (ör. nöbette 5–8) bütçeden değil, kadronun kendi
+kısıtlarından geliyor: günde 3 nöbetçi, `maxConsecutiveDuties: 1` ve
+`minRestDaysAfterDuty: 1` birlikte takasların çoğunu reddediyor. Canlıda (Vercel,
+fra1) ölçülen: **18,2 sn**, 153 slotun tamamı dolu, bayrak ve uyarı yok.
+
 Testler `timeBudgetMs: 0` geçer: tohumlu rastgeleyle belirlenimci kalmaları gerekir,
 yavaş bir makinede bütçenin aramayı kesmesi sonucu değiştirirdi.
 
