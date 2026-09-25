@@ -24,6 +24,7 @@ npm run dev              # http://localhost:4000
 | `PORT` | Varsayılan `4000` |
 | `CORS_ORIGIN` | İzinli origin'ler, virgülle ayrılır |
 | `PUBLIC_BASE_URL` | Paylaşım linklerinin öneki |
+| `SCHEDULER_TIME_BUDGET_MS` | Yerel aramaya ayrılan süre, ms (varsayılan `12000`) |
 | `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Seed yöneticisi |
 | `SEED_YEAR` | Örnek izinlerin yılı (varsayılan: içinde bulunulan yıl) |
 
@@ -180,6 +181,38 @@ testler aynı hattı doğrudan kullanır.
    (aşağıya bakın).
 13. **`flags`** — Tüm set yeniden değerlendirilir; hem üretimden sonra hem manuel
    düzenleme kaydedilirken çalışır. `puantaj()` ay sonu dökümünü üretir.
+
+### Arama süre bütçesi
+
+Yerel arama, iterasyon sayısı yanında bir **duvar saati bütçesiyle** de sınırlıdır
+(`SEARCH_TIME_BUDGET_MS`, varsayılan 12 sn; `SCHEDULER_TIME_BUDGET_MS` ile
+değiştirilir). Sebebi ölçüldü: 14 kişilik bir birimin bir ayı için üç turun toplamı
+60000 iterasyon, geliştirme makinesinde **6,8 saniye** sürüyor; aynı iş sunucusuz bir
+fonksiyonda (Vercel, Hobby) 60 saniyeyi aşıp `FUNCTION_INVOCATION_TIMEOUT` veriyordu.
+İterasyon sayısı taşınabilir bir sınır değil — CPU'ya göre süresi katlarca değişiyor.
+
+Bütçe üç tura paylaştırılır; iterasyon sınırına önce ulaşan tur artan süreyi
+sonrakine bırakır. Bütçe dolduğunda arama o anki en iyi çözümle **durur**, yarım
+liste dönmez: slotların tamamı doludur, zorunlu kurallar çiğnenmemiştir; yalnızca
+adalet optimizasyonu daha az derindir. Bütçe dışındaki aşamalar (açgözlü yerleştirme
+ve onarım geçişleri) her koşulda tamamlanır — ölçümde toplamları 300 ms civarı.
+
+Aynı birim için ölçülen kalite, iterasyon sayısına karşı:
+
+| İterasyon (tur başına) | Süre | Nöbet farkı | Hafta sonu farkı | Saat farkı |
+|---|---|---|---|---|
+| 20000 | 6850 ms | 1 | 1 | 24 |
+| 8000 | 2775 ms | 1 | 1 | 24 |
+| 2000 | 710 ms | 1 | 1 | 24 |
+| 1000 | 374 ms | 1 | 1 | 24 |
+
+Bu birimde kalite 1000 iterasyonda doymuş durumda; kalan 6,5 saniye CPU karşılıksız
+harcanıyordu. Doyma noktası kadroya ve kısıtlara göre değiştiği için iterasyon
+varsayılanı düşürülmedi — sınırı süre koyuyor, böylece hızlı makinede tam arama
+yapılır, kısıtlı ortamda iş zamanında biter.
+
+Testler `timeBudgetMs: 0` geçer: tohumlu rastgeleyle belirlenimci kalmaları gerekir,
+yavaş bir makinede bütçenin aramayı kesmesi sonucu değiştirirdi.
 
 ### Yerel aramanın erken durması
 
@@ -470,11 +503,12 @@ Bilinmesi gerekenler:
 - Bağlantı, kap ömrü boyunca yeniden kullanılır (`api/index.js`). Her istekte
   yeniden bağlanmak Atlas bağlantı havuzunu kısa sürede tüketirdi.
 - Soğuk başlatmada ilk isteğe Atlas bağlantısı eklenir; birkaç saniye sürebilir.
-- Otomatik üretim (`POST .../generate`) ağır bir iştir; testlerde bir ay için
-  6–10 saniye sürüyor. `vercel.json` fonksiyon süresini 60 saniyeye çıkarır.
-  Büyük birimlerde bu sınıra yaklaşılırsa uzun ömürlü bir sunucu (Render,
-  Railway, Fly) daha uygun olur — o durumda `src/server.js` değişiklik
-  gerektirmeden çalışır.
+- Otomatik üretim (`POST .../generate`) ağır bir iştir ve fonksiyonun 60 saniyelik
+  sınırına takılabilir. Yerel arama bu yüzden duvar saati bütçesiyle sınırlıdır
+  (`SCHEDULER_TIME_BUDGET_MS`, varsayılan 12 sn) — ayrıntısı
+  [Arama süre bütçesi](#arama-süre-bütçesi) başlığında.
+- Fonksiyon bölgesi ile Atlas bölgesi birbirine yakın seçilmeli; uzak olduklarında
+  her sorgu turu yüz milisaniyelerle ölçülür ve okumalar bile saniyelere çıkar.
 
 ## Yapı
 

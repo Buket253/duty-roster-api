@@ -48,3 +48,16 @@ export const SHIFT_DURATION_HOURS = {
   'nobet-24': 24,
   'mesai-8': 8,
 };
+
+/**
+ * Yerel aramanın üç turuna ayrılan toplam duvar saati bütçesi (ms).
+ *
+ * İterasyon sayısı tek başına yeterli sınır değil: aynı 60000 iterasyon
+ * geliştirme makinesinde ~7 saniye sürerken sunucusuz bir ortamda (Vercel)
+ * dakikayı aşıp fonksiyonu zaman aşımına düşürüyordu. Bütçe duvar saatiyle
+ * ölçüldüğü için hangi CPU'da çalışıldığına bakmaz; arama bütçe dolunca durur
+ * ve her koşulda tamamlanmış, kurallara uygun bir liste döner.
+ *
+ * SCHEDULER_TIME_BUDGET_MS ile ortam bazında değiştirilebilir.
+ */
+export const SEARCH_TIME_BUDGET_MS = 12_000;

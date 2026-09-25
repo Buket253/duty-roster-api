@@ -359,6 +359,11 @@ export function localSearch({
   // denemede bırakıyor, dengelemeyi fiilen hiç yapmıyordu. 6000'lik bir eşik bile
   // aylık saat farkını 24'ten 40'a çıkarıyor (ölçüldü); iterasyon sınırı yeterli.
   stagnantLimit = Number.POSITIVE_INFINITY,
+  // Duvar saati sınırı (Date.now() ölçeğinde bir an). İterasyon sınırı makineden
+  // makineye çok farklı süreler demek oluyor; sunucusuz ortamda aynı iterasyon
+  // sayısı fonksiyonu zaman aşımına düşürüyordu. Bütçe dolduğunda arama o anki
+  // en iyi çözümle durur — yarım kalmış bir liste dönmez.
+  deadline = null,
   random = Math.random,
 }) {
   const current = assignments.map((a) => ({ ...a }));
@@ -391,7 +396,14 @@ export function localSearch({
   // Aday havuzu: devretme hamlesinde slotun verilebileceği kişiler.
   const havuz = employees.filter((e) => e.active !== false);
 
+  // Saat her iterasyonda değil, blok başına bir kez okunur: tek bir maliyet
+  // hesabının yanında Date.now() pahalı değil ama 60000 çağrı ölçülebilir bir
+  // yük bindiriyor ve bütçenin bu çözünürlükte olmasına gerek yok.
+  const SAAT_ARALIGI = 256;
+
   for (let i = 0; i < iterations && stagnant < stagnantLimit; i += 1) {
+    if (deadline && i % SAAT_ARALIGI === 0 && Date.now() >= deadline) break;
+
     const bucket = buckets[Math.floor(random() * buckets.length)];
     const a = bucket[Math.floor(random() * bucket.length)];
 

@@ -82,6 +82,9 @@ function run({ employees = TEAM, rule = RULE, leaves = [], history = [], iterati
     rule,
     history,
     iterations,
+    // Süre bütçesi kapalı: testler tohumlu rastgeleyle belirlenimci olmalı,
+    // yavaş bir makinede bütçenin aramayı erken kesmesi sonucu değiştirirdi.
+    timeBudgetMs: 0,
     random,
   });
 }
@@ -580,4 +583,46 @@ test('izin kuralı Pazartesi dışını uyarır ama engellemez', () => {
     []
   );
   assert.deepEqual(persembesiz.warnings, [LEAVE_WARNINGS.NO_THURSDAY_DUTY]);
+});
+
+/**
+ * Süre bütçesi, üretimin sunucusuz ortamda zaman aşımına düşmesini engelleyen
+ * tek şey. İterasyon sınırı makineden makineye çok farklı süreler demek: aynı
+ * 60000 iterasyon burada saniyeler, kısıtlı bir CPU'da dakikalar sürüyor.
+ * Bütçe dolduğunda arama durur ama liste yarım kalmaz — slotların tamamı yerinde,
+ * zorunlu kurallar çiğnenmemiş olmalı.
+ */
+test('süre bütçesi aramayı keser ama tamamlanmış liste döner', () => {
+  const kisitli = () => {
+    let seed = 42;
+    const random = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    return buildSchedule({
+      shiftTypes: UNIT.shiftTypes,
+      year: YEAR,
+      month: MONTH,
+      employees: TEAM,
+      leaves: [],
+      rule: RULE,
+      history: [],
+      // Bütçe tükenmeden bitmesi imkânsız bir iterasyon sayısı.
+      iterations: 5_000_000,
+      timeBudgetMs: 900,
+    });
+  };
+
+  const t = Date.now();
+  const a = kisitli();
+  const gecen = Date.now() - t;
+
+  // Üç tur 900 ms'i paylaşır; onarım geçişleri bütçe dışı olduğu için pay bırakılır.
+  assert.ok(gecen < 20_000, `bütçe aramayı kesmeli, geçen süre ${gecen} ms`);
+
+  const butcesiz = buildSlots(UNIT, YEAR, MONTH, RULE);
+  assert.equal(a.length, butcesiz.length, 'slot sayısı bütçeden etkilenmez');
+  assert.equal(
+    a.filter((x) => !x.employee).length,
+    0,
+    'bütçe dolsa da her slot dolu döner'
+  );
+  assert.deepEqual(idleViolations(a, TEAM, RULE, YEAR, MONTH), [], 'bekleme sınırı korunur');
 });

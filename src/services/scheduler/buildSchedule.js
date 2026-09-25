@@ -6,6 +6,29 @@ import { repairIdleGaps } from './repairIdleGaps.js';
 import { repairDayBalance } from './repairDayBalance.js';
 import { evaluateFlags } from './flags.js';
 import { fullWeekKeys } from '../../utils/dates.js';
+import { SEARCH_TIME_BUDGET_MS } from '../../utils/constants.js';
+
+/** Yerel aramanın kaç turu bütçeden pay alıyor (adım 1, 2 ve 5). */
+const ARAMA_TURU = 3;
+
+/**
+ * Turlara duvar saati payı dağıtır. Pay, kalan bütçenin kalan tur sayısına
+ * bölümüdür: erken biten tur (iterasyon sınırına önce ulaşan) artan süreyi
+ * sonraki turlara bırakır, böylece bütçe boşa gitmez.
+ */
+function butcePaylastirici(totalMs) {
+  const gecersiz = !Number.isFinite(totalMs) || totalMs <= 0;
+  const bitis = Date.now() + totalMs;
+  let kalanTur = ARAMA_TURU;
+
+  return () => {
+    if (gecersiz) return null;
+    const simdi = Date.now();
+    const pay = Math.max(0, (bitis - simdi) / kalanTur);
+    kalanTur = Math.max(1, kalanTur - 1);
+    return simdi + pay;
+  };
+}
 
 /**
  * Tüm üretim hattı, veritabanından bağımsız. generateSchedule bunu çağırıp
@@ -25,8 +48,12 @@ export function buildSchedule({
   rule,
   history = [],
   iterations = 20000,
+  // Yerel aramanın üç turuna ayrılan toplam süre. null/0 verilirse yalnızca
+  // iterasyon sınırı işler (testlerde belirlenimciliği korumak için).
+  timeBudgetMs = SEARCH_TIME_BUDGET_MS,
   random,
 }) {
+  const sonrakiBitis = butcePaylastirici(timeBudgetMs);
   const slots = buildSlots({ shiftTypes }, year, month, rule);
   const fullWeeks = fullWeekKeys(year, month);
   // Adalet payları bir kez hesaplanır: ay ortasında nöbete başlayan ya da izinli
@@ -42,6 +69,7 @@ export function buildSchedule({
     shares,
     types: ['nobet-24'],
     iterations,
+    deadline: sonrakiBitis(),
     random,
   });
 
@@ -63,6 +91,7 @@ export function buildSchedule({
     // Tüm vardiyalar yerleşti: bekleme sınırı artık ölçülebilir.
     enforceIdle: true,
     iterations,
+    deadline: sonrakiBitis(),
     random,
   });
 
@@ -94,6 +123,7 @@ export function buildSchedule({
     balanceWeekly: true,
     fullWeeks,
     iterations,
+    deadline: sonrakiBitis(),
     random,
   });
 

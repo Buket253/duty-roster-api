@@ -6,6 +6,17 @@ import { monthRange } from '../../utils/dates.js';
 import { buildSchedule } from './buildSchedule.js';
 import { loadHistory } from './history.js';
 import { getRuleForUnit } from '../rules.js';
+import { SEARCH_TIME_BUDGET_MS } from '../../utils/constants.js';
+
+/**
+ * Yerel aramaya ayrılan süre. Sunucusuz ortamlarda fonksiyonun kendi zaman
+ * sınırı var; bütçe oraya sığacak şekilde SCHEDULER_TIME_BUDGET_MS ile
+ * daraltılabilir. Geçersiz bir değer sessizce yutulmaz, varsayılana düşer.
+ */
+function sureButcesi() {
+  const ham = Number(process.env.SCHEDULER_TIME_BUDGET_MS);
+  return Number.isFinite(ham) && ham > 0 ? ham : SEARCH_TIME_BUDGET_MS;
+}
 
 /** Birimin aktif çalışanları + o ayla kesişen izinleri + önceki aydan devreden atamalar. */
 export async function loadUnitContext(unitId, year, month) {
@@ -39,6 +50,7 @@ export async function generateSchedule(unit, year, month, { iterations = 20000 }
     rule,
     history,
     iterations,
+    timeBudgetMs: sureButcesi(),
   });
 
   const schedule = await Schedule.findOneAndUpdate(
