@@ -9,6 +9,9 @@ const dutyAssignmentSchema = new mongoose.Schema(
     employee: { type: mongoose.Schema.Types.ObjectId, ref: 'Employee', default: null },
     shiftType: { type: String, enum: SHIFT_TYPES, required: true },
     flags: [{ type: String }],
+    // Kadro dışında, tek bir güne elle eklenen atama. Kadro aşımı uyarısına
+    // girmez (bilerek yapılmıştır) ve ekranda ayrıca işaretlenir.
+    manual: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

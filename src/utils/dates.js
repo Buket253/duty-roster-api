@@ -47,3 +47,45 @@ export function sameUtcDay(a, b) {
 export function toIsoDay(date) {
   return startOfUtcDay(date).toISOString().slice(0, 10);
 }
+
+/** Pazartesi = 1 … Pazar = 7 (ISO). */
+export function isoWeekday(date) {
+  return new Date(date).getUTCDay() || 7;
+}
+
+export const isMonday = (date) => isoWeekday(date) === 1;
+
+/**
+ * Nöbet adaletinin dengelendiği dört kategoriden hangisi?
+ * Cmt-Paz ve resmi tatiller 'hafta-sonu', Perşembe 'persembe', Cuma 'cuma',
+ * Pzt-Çar 'hafta-ici'. Perşembe ve Cuma kendi içlerinde dengelenir.
+ */
+export function dutyCategory(date, holidays = null) {
+  if (holidays?.has?.(toIsoDay(date))) return 'hafta-sonu';
+  const day = isoWeekday(date);
+  if (day >= 6) return 'hafta-sonu';
+  if (day === 5) return 'cuma';
+  if (day === 4) return 'persembe';
+  return 'hafta-ici';
+}
+
+/** Tarihin içinde bulunduğu ISO haftasının Pazartesi'si — haftalık saat toplamı bunun üzerinden gruplanır. */
+export function startOfIsoWeek(date) {
+  return addDays(startOfUtcDay(date), -(isoWeekday(date) - 1));
+}
+
+export const isoWeekKey = (date) => toIsoDay(startOfIsoWeek(date));
+
+/**
+ * Ayın tamamını kapsayan ISO haftalarının anahtarları.
+ * Ay başındaki/sonundaki yarım haftalar dışarıda bırakılır: o haftalarda kişinin
+ * saatinin düşük olması kural ihlali değil, ayın kesildiği yerdir.
+ */
+export function fullWeekKeys(year, month) {
+  const { start, end } = monthRange(year, month);
+  const keys = new Set();
+  for (let cursor = startOfIsoWeek(start); cursor < end; cursor = addDays(cursor, 7)) {
+    if (cursor >= start && addDays(cursor, 7) <= end) keys.add(toIsoDay(cursor));
+  }
+  return keys;
+}

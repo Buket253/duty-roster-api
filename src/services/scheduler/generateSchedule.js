@@ -3,13 +3,11 @@ import LeaveRequest from '../../models/LeaveRequest.js';
 import Schedule from '../../models/Schedule.js';
 import DutyAssignment from '../../models/DutyAssignment.js';
 import { monthRange } from '../../utils/dates.js';
-import { buildSlots } from './buildSlots.js';
-import { greedyAssign } from './greedyAssign.js';
-import { localSearch } from './localSearch.js';
-import { evaluateFlags } from './flags.js';
+import { buildSchedule } from './buildSchedule.js';
+import { loadHistory } from './history.js';
 import { getRuleForUnit } from '../rules.js';
 
-/** Birimin aktif çalışanları + o ayla kesişen izinleri. */
+/** Birimin aktif çalışanları + o ayla kesişen izinleri + önceki aydan devreden atamalar. */
 export async function loadUnitContext(unitId, year, month) {
   const { start, end } = monthRange(year, month);
   const employees = await Employee.find({ unit: unitId, active: true }).sort({ name: 1 }).lean();
@@ -17,23 +15,31 @@ export async function loadUnitContext(unitId, year, month) {
     employee: { $in: employees.map((e) => e._id) },
     startDate: { $lt: end },
     endDate: { $gte: start },
-  }).lean();
+  })
+    .populate('employee', 'name')
+    .lean();
   const rule = await getRuleForUnit(unitId);
-  return { employees, leaves, rule };
+  const history = await loadHistory(unitId, year, month);
+  return { employees, leaves, rule, history };
 }
 
 /**
- * Bölüm 7'deki beş adımı sırayla çalıştırır:
- * slot üret → aday filtrele → açgözlü ata → yerel arama ile dengele → flag'le,
- * ardından taslağı kalıcılaştırır (aynı ay için varsa eskisinin üzerine yazar).
+ * Üretim hattını (buildSchedule) çalıştırıp taslağı kalıcılaştırır; aynı ay için
+ * kayıt varsa üzerine yazar.
  */
-export async function generateSchedule(unit, year, month, { iterations = 500 } = {}) {
-  const { employees, leaves, rule } = await loadUnitContext(unit._id, year, month);
+export async function generateSchedule(unit, year, month, { iterations = 20000 } = {}) {
+  const { employees, leaves, rule, history } = await loadUnitContext(unit._id, year, month);
 
-  const slots = buildSlots(unit, year, month);
-  const greedy = greedyAssign({ slots, employees, leaves, rule });
-  const balanced = localSearch({ assignments: greedy, employees, leaves, rule, iterations });
-  evaluateFlags(balanced, { leaves, rule });
+  const assignments = buildSchedule({
+    shiftTypes: unit.shiftTypes ?? [],
+    year,
+    month,
+    employees,
+    leaves,
+    rule,
+    history,
+    iterations,
+  });
 
   const schedule = await Schedule.findOneAndUpdate(
     { unit: unit._id, year, month },
@@ -43,7 +49,7 @@ export async function generateSchedule(unit, year, month, { iterations = 500 } =
 
   await DutyAssignment.deleteMany({ schedule: schedule._id });
   await DutyAssignment.insertMany(
-    balanced.map((a) => ({
+    assignments.map((a) => ({
       schedule: schedule._id,
       date: a.date,
       employee: a.employee,

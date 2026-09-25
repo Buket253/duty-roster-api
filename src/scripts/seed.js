@@ -22,12 +22,18 @@ const {
 const YEAR = Number(SEED_YEAR);
 const MONTH = 10; // Ekim — örnek dönem
 
+// Üç personel tipinin hepsi örnek veride temsil edilir.
 const EMPLOYEES = [
-  { name: 'Dr. Elif Yılmaz', title: 'Uzman' },
-  { name: 'Dr. Mert Kaya', title: 'Uzman' },
-  { name: 'Dr. Zeynep Demir', title: 'Asistan' },
-  { name: 'Dr. Can Öztürk', title: 'Asistan' },
-  { name: 'Dr. Selin Arslan', title: 'Asistan' },
+  { name: 'Elif Yılmaz', title: 'Sorumlu hemşire', staffType: 'sorumlu' },
+  { name: 'Nalan Acar', title: 'Hemşire', staffType: 'sadece-gunduz' },
+  { name: 'Mert Kaya', title: 'Hemşire', staffType: 'standart' },
+  { name: 'Zeynep Demir', title: 'Hemşire', staffType: 'standart' },
+  { name: 'Can Öztürk', title: 'Hemşire', staffType: 'standart' },
+  { name: 'Selin Arslan', title: 'Hemşire', staffType: 'standart' },
+  { name: 'Burak Şahin', title: 'Hemşire', staffType: 'standart' },
+  { name: 'Deniz Yıldırım', title: 'Hemşire', staffType: 'standart' },
+  // Gebelik raporu: gündüz rotasyonunda kalır, nöbete yazılmaz.
+  { name: 'Pınar Ateş', title: 'Hemşire', staffType: 'standart', canTakeDuty: false },
 ];
 
 if (!MONGODB_URI) {
@@ -55,14 +61,21 @@ await Admin.create({
 });
 
 const unit = await Unit.create({
-  name: 'Dahiliye',
+  name: 'Nöroloji Yoğun Bakım',
   shiftTypes: ['nobet-24', 'mesai-8'],
-  minStaffPerDay: 1,
   active: true,
 });
 
-// Bölüm 8'deki varsayılanlar; şema default'ları ile birebir aynı.
-const rule = await ShiftRule.create({ unit: unit._id });
+// Kadro: hafta içi 5 gündüz + 1 nöbetçi, hafta sonu yalnızca 1 nöbetçi.
+// Sorumlu ve sadece-gündüz personeli bu 5 kişinin İÇİNDEN sayılır; kalan 3 yeri
+// rotasyon doldurur. Haftalık 32 saat kuralının tutması için gereken alan budur.
+const rule = await ShiftRule.create({
+  unit: unit._id,
+  weekdayDayStaff: 5,
+  weekdayDutyStaff: 1,
+  weekendDayStaff: 0,
+  weekendDutyStaff: 1,
+});
 
 const employees = await Employee.insertMany(
   EMPLOYEES.map((e) => ({ ...e, unit: unit._id, active: true }))
@@ -71,14 +84,16 @@ const employees = await Employee.insertMany(
 const byName = (name) => employees.find((e) => e.name === name)._id;
 
 await LeaveRequest.insertMany([
+  // Kurala uygun izin: Pazartesi başlar, dönüş günü de Pazartesi.
   {
-    employee: byName('Dr. Zeynep Demir'),
-    startDate: utcDate(YEAR, MONTH, 6),
-    endDate: utcDate(YEAR, MONTH, 10),
+    employee: byName('Zeynep Demir'),
+    startDate: utcDate(YEAR, MONTH, 5),
+    endDate: utcDate(YEAR, MONTH, 11),
     type: 'yillik',
   },
+  // Kurala uymayan izin: Salı başlıyor — uyarı üretir ama engellenmez.
   {
-    employee: byName('Dr. Can Öztürk'),
+    employee: byName('Can Öztürk'),
     startDate: utcDate(YEAR, MONTH, 20),
     endDate: utcDate(YEAR, MONTH, 22),
     type: 'rapor',
@@ -90,7 +105,8 @@ console.log(`  Yönetici : ${SEED_ADMIN_EMAIL} / ${SEED_ADMIN_PASSWORD}`);
 console.log(`  Birim    : ${unit.name} (${unit._id})`);
 console.log(`  Çalışan  : ${employees.length} kişi`);
 console.log(`  İzin     : 2 kayıt (${MONTH}/${YEAR})`);
-console.log(`  Kural    : min ${rule.minDutiesPerMonth} / maks ${rule.maxDutiesPerMonth} nöbet`);
+console.log(`  Kadro    : hafta içi ${rule.weekdayDayStaff} gündüz + ${rule.weekdayDutyStaff} nöbetçi, hafta sonu ${rule.weekendDayStaff} gündüz + ${rule.weekendDutyStaff} nöbetçi`);
+console.log(`  Kural    : min ${rule.minDutiesPerMonth} / maks ${rule.maxDutiesPerMonth} nöbet, ${rule.minRestDaysAfterDuty} gün dinlenme`);
 console.log(`\n  Taslak üretmek için: POST /api/admin/schedules/${unit._id}/${YEAR}/${MONTH}/generate`);
 
 await mongoose.disconnect();

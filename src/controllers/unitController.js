@@ -8,7 +8,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { badRequest, notFound } from '../utils/HttpError.js';
 import { SHIFT_TYPES } from '../utils/constants.js';
 
-const pickBody = ({ name, shiftTypes, minStaffPerDay, active }) => {
+const pickBody = ({ name, shiftTypes, active }) => {
   const payload = {};
   if (name !== undefined) payload.name = name;
   if (shiftTypes !== undefined) {
@@ -17,7 +17,6 @@ const pickBody = ({ name, shiftTypes, minStaffPerDay, active }) => {
     }
     payload.shiftTypes = shiftTypes;
   }
-  if (minStaffPerDay !== undefined) payload.minStaffPerDay = minStaffPerDay;
   if (active !== undefined) payload.active = active;
   return payload;
 };

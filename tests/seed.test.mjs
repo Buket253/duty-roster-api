@@ -38,12 +38,19 @@ test('seed script örnek veriyi oluşturuyor', async () => {
   assert.equal(await Admin.countDocuments(), 1);
 
   const unit = await Unit.findOne();
-  assert.equal(unit.name, 'Dahiliye');
+  assert.equal(unit.name, 'Nöroloji Yoğun Bakım');
   assert.deepEqual(unit.shiftTypes, ['nobet-24', 'mesai-8']);
 
-  assert.equal(await Employee.countDocuments({ unit: unit._id }), 5);
+  assert.equal(await Employee.countDocuments({ unit: unit._id }), 9);
   assert.equal(await LeaveRequest.countDocuments(), 2);
+
+  // Üç personel tipi de örnek veride bulunmalı.
+  assert.equal(await Employee.countDocuments({ unit: unit._id, staffType: 'sorumlu' }), 1);
+  assert.equal(await Employee.countDocuments({ unit: unit._id, staffType: 'sadece-gunduz' }), 1);
+  assert.equal(await Employee.countDocuments({ unit: unit._id, canTakeDuty: false }), 1);
 
   const rule = await ShiftRule.findOne({ unit: unit._id });
   assert.equal(rule.maxDutiesPerMonth, 7);
+  assert.equal(rule.weekdayDayStaff, 5);
+  assert.equal(rule.weekendDayStaff, 0);
 });
